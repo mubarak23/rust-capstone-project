@@ -1,16 +1,21 @@
 #![allow(unused)]
-use bitcoin::hex::DisplayHex;
-use bitcoincore_rpc::bitcoin::Amount;
+
+use bitcoin::hex::{Case, DisplayHex};
+use bitcoin::io::ErrorKind;
+use bitcoincore_rpc::bitcoin::{Address, Amount, BlockHash, Network, SignedAmount, Txid};
+use bitcoincore_rpc::bitcoincore_rpc_json::{AddressType, GetTransactionResultDetailCategory};
+use bitcoincore_rpc::json::{ListReceivedByAddressResult, LoadWalletResult};
 use bitcoincore_rpc::{Auth, Client, RpcApi};
-use serde::Deserialize;
+use serde::ser::{SerializeSeq, SerializeStruct};
+use serde::{Deserialize, Serializer};
 use serde_json::json;
 use std::fs::File;
 use std::io::Write;
 
 // Node access params
 const RPC_URL: &str = "http://127.0.0.1:18443"; // Default regtest RPC port
-const RPC_USER: &str = "alice";
-const RPC_PASS: &str = "password";
+const RPC_USER: &str = "mubarak23";
+const RPC_PASS: &str = "mubarak23";
 
 // You can use calls not provided in RPC lib API using the generic `call` function.
 // An example of using the `send` RPC call, which doesn't have exposed API.
@@ -36,30 +41,217 @@ fn send(rpc: &Client, addr: &str) -> bitcoincore_rpc::Result<String> {
 
 fn main() -> bitcoincore_rpc::Result<()> {
     // Connect to Bitcoin Core RPC
-    let rpc = Client::new(
-        RPC_URL,
+    let Minner_rpc = Client::new(
+        format!("{RPC_URL}/wallet/Minner").as_str(),
+        Auth::UserPass(RPC_USER.to_owned(), RPC_PASS.to_owned()),
+    )?;
+
+    let Traders_rpc = Client::new(
+        format!("{RPC_URL}/wallet/Traders").as_str(),
         Auth::UserPass(RPC_USER.to_owned(), RPC_PASS.to_owned()),
     )?;
 
     // Get blockchain info
-    let blockchain_info = rpc.get_blockchain_info()?;
-    println!("Blockchain Info: {:?}", blockchain_info);
+    let blockchain_info = Minner_rpc.get_blockchain_info()?;
+    println!("Blockchain Info: {blockchain_info:?}");
 
-    // Create/Load the wallets, named 'Miner' and 'Trader'. Have logic to optionally create/load them if they do not exist or not loaded already.
+    // Create/Load the wallets, named 'Minner' and 'Traders'. Have logic to optionally create/load them if they do not exist or not loaded already.
+    let Minner_wallet = "Minner";
+    let Traders_wallet = "Traders";
+    let _ = get_wallet(&Minner_rpc, Minner_wallet).unwrap();
+    let _ = get_wallet(&Traders_rpc, Traders_wallet).unwrap();
 
-    // Generate spendable balances in the Miner wallet. How many blocks needs to be mined?
+    // Generate spendable balances in the Minner wallet. How many blocks needs to be mined?
+    let Minner_input_address = Minner_rpc
+        .get_new_address(Some("Mining Reward"), Some(AddressType::Bech32))?
+        .require_network(Network::Regtest)
+        .expect("new Minner address");
 
-    // Load Trader wallet and generate a new address
+    // generate 101 blocks first to obtain the funds
+    Minner_rpc.generate_to_address(101, &Minner_input_address)?;
 
-    // Send 20 BTC from Miner to Trader
+    // Minner needs at least 20 BTC
+    let mut Minner_balance = Minner_rpc.get_wallet_info().expect("Minner balance").balance;
+    while Minner_balance.to_btc() < 20.0 {
+        let _block_hash = Minner_rpc.generate_to_address(1, &Minner_input_address)?;
+        Minner_balance = Minner_rpc.get_wallet_info().expect("Minner balance").balance;
+    }
+
+    // Load Traders wallet and generate a new address
+    let Traders_output_address = Traders_rpc
+        .get_new_address(Some("BTC trades"), Some(AddressType::Bech32))?
+        .require_network(Network::Regtest)
+        .expect("new Traders address");
+
+    // Send 20 BTC from Minner to Traders
+    let tx_id = Minner_rpc
+        .send_to_address(
+            &Traders_output_address,
+            Amount::from_int_btc(20),
+            Some("I will send you some BTC for trading!"),
+            Some("my friend best Traders"),
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("send BTC to Traders");
 
     // Check transaction in mempool
+    let mempool_entry = Minner_rpc.get_mempool_entry(&tx_id).expect("mempool entry");
 
     // Mine 1 block to confirm the transaction
+    let confirmation_block = Minner_rpc.generate_to_address(1, &Minner_input_address);
 
     // Extract all required transaction details
+    // 1. Transaction ID (txid)
+    println!("1. Transaction ID: {tx_id}");
+
+    let Minner_tx = Minner_rpc.get_transaction(&tx_id, None)?;
+    let Minner_tx_details = Minner_tx.details;
+
+    // 2. Minner's Input Address
+    let Minner_address_str = Minner_input_address.to_string();
+
+    // 3. Minner's Input Amount (in BTC)
+    // we need to aggregate all inputs into a total amount (there could be multiple inputs)
+    let Minner_input_amount = f64::abs(
+        Minner_tx_details
+            .iter()
+            .map(|detail| detail.amount.to_btc())
+            .sum(),
+    );
+
+    // 4. Traders's Output Address
+    let Traders_address_str = Traders_output_address.to_string();
+
+    // 5. Traders Output Amount
+    let Traders_tx = Traders_rpc.get_transaction(&tx_id, None)?;
+    let Traders_tx_details = Traders_tx.details;
+    let Traders_output_amount: f64 = Traders_tx_details
+        .iter()
+        .map(|detail| detail.amount.to_btc())
+        .sum();
+
+    // 6. Minner's Change Address
+    let Minner_raw_tx =
+        Minner_rpc.decode_raw_transaction(Minner_tx.hex.to_hex_string(Case::Lower), Some(true))?;
+    let Minner_vout = Minner_raw_tx
+        .vout
+        .iter()
+        .filter(|v| v.script_pub_key.address.as_ref().unwrap() != &Traders_output_address)
+        .next_back()
+        .expect("Minner UTXOs");
+    let Minner_change_address = Minner_vout
+        .clone()
+        .script_pub_key
+        .address
+        .unwrap()
+        .require_network(Network::Regtest)
+        .unwrap();
+
+    // 7. Minner Change Amount
+    let Minner_change_amount = Minner_vout.value.to_btc();
+
+    // 8. Transaction Fees (in BTC)
+    let fee = Minner_tx.fee.expect("fee Minner tx").to_btc();
+
+    // Block height at which the transaction is confirmed
+    // Block hash at which the transaction is confirmed
+    // we pick up the first block hash, because in generate_to_address() we mine 1 block
+    let confirmation_block_hash = *confirmation_block?.first().unwrap();
+    let block_info = Minner_rpc.get_block_info(&confirmation_block_hash)?;
+    let block_height = block_info.height as u64;
 
     // Write the data to ../out.txt in the specified format given in readme.md
+    let output = OutputFile {
+        txid: tx_id,
+        Minner_input_address,
+        Minner_input_amount,
+        Traders_output_address,
+        Traders_output_amount,
+        Minner_change_address,
+        Minner_change_amount,
+        fee,
+        block_height,
+        confirmation_block_hash,
+    };
+
+    let mut file = File::create("../out.txt")?;
+    for line in output.to_lines() {
+        writeln!(file, "{line}")?;
+    }
 
     Ok(())
+}
+
+#[derive(Debug)]
+struct OutputFile {
+    txid: Txid,
+    Minner_input_address: Address,
+    Minner_input_amount: f64,
+    Traders_output_address: Address,
+    Traders_output_amount: f64,
+    Minner_change_address: Address,
+    Minner_change_amount: f64,
+    fee: f64,
+    block_height: u64,
+    confirmation_block_hash: BlockHash,
+}
+
+impl OutputFile {
+    fn to_lines(&self) -> Vec<String> {
+        vec![
+            self.txid.to_string(),
+            self.Minner_input_address.to_string(),
+            self.Minner_input_amount.to_string(),
+            self.Traders_output_address.to_string(),
+            self.Traders_output_amount.to_string(),
+            self.Minner_change_address.to_string(),
+            self.Minner_change_amount.to_string(),
+            self.fee.to_string(),
+            self.block_height.to_string(),
+            self.confirmation_block_hash.to_string(),
+        ]
+    }
+}
+
+fn get_wallet(rpc: &Client, wallet_name: &str) -> Result<LoadWalletResult, bitcoin::io::Error> {
+    let wallet_exists = rpc
+        .list_wallets()
+        .expect("wallet list")
+        .iter()
+        .any(|wallet| wallet.eq(wallet_name));
+    let wallets = rpc.list_wallets().unwrap();
+    if wallet_exists {
+        let mut wallet = rpc.load_wallet(wallet_name);
+        if wallet.is_err() {
+            let error = wallet.err().unwrap().to_string();
+            if error.contains("code: -4") {
+                // based on error code the wallet is already loaded, to access it, unload it fist
+                rpc.unload_wallet(Some(wallet_name)).expect("unload wallet");
+                wallet = rpc.load_wallet(wallet_name);
+            } else {
+                return Err(bitcoin::io::Error::new(ErrorKind::NotFound, error));
+            }
+        }
+        Ok(wallet.unwrap())
+    } else {
+        // creating new wallet
+        let wallet = rpc.create_wallet(wallet_name, None, None, None, None);
+        if wallet.is_err() {
+            return if wallet.err().unwrap().to_string().contains("code: -4") {
+                Err(bitcoin::io::Error::new(
+                    ErrorKind::AlreadyExists,
+                    "wallet with this name already exists",
+                ))
+            } else {
+                Err(bitcoin::io::Error::new(
+                    ErrorKind::Other,
+                    "Unable to create wallet. Try again later",
+                ))
+            };
+        }
+        Ok(wallet.unwrap())
+    }
 }
