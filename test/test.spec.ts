@@ -2,12 +2,12 @@ import { readFileSync } from "fs";
 
 describe('Evaluate submission', () => {
     let txid: string;
-    let minerInputAddress: string;
-    let minerInputAmount: number;
-    let traderInputAddress: string;
-    let traderInputAmount: number;
-    let minerChangeAddress: string;
-    let minerChangeAmount: number;
+    let MinnerInputAddress: string;
+    let MinnerInputAmount: number;
+    let TradersssInputAddress: string;
+    let TradersssInputAmount: number;
+    let MinnerChangeAddress: string;
+    let MinnerChangeAmount: number;
     let fee: number;
     let blockHeight: number;
     let blockHash: string;
@@ -22,26 +22,26 @@ describe('Evaluate submission', () => {
         expect(txid).toBeDefined();
         expect(txid).toHaveLength(64);
 
-        minerInputAddress = data[1].trim();
-        expect(minerInputAddress).toBeDefined();
+        MinnerInputAddress = data[1].trim();
+        expect(MinnerInputAddress).toBeDefined();
 
-        minerInputAmount = parseFloat(data[2].trim());
-        expect(minerInputAmount).toBeDefined();
-        expect(minerInputAmount).toBeGreaterThan(0);
+        MinnerInputAmount = parseFloat(data[2].trim());
+        expect(MinnerInputAmount).toBeDefined();
+        expect(MinnerInputAmount).toBeGreaterThan(0);
 
-        traderInputAddress = data[3].trim();
-        expect(traderInputAddress).toBeDefined();
+        TradersssInputAddress = data[3].trim();
+        expect(TradersssInputAddress).toBeDefined();
 
-        traderInputAmount = parseFloat(data[4].trim());
-        expect(traderInputAmount).toBeDefined();
-        expect(traderInputAmount).toBeGreaterThan(0);
+        TradersssInputAmount = parseFloat(data[4].trim());
+        expect(TradersssInputAmount).toBeDefined();
+        expect(TradersssInputAmount).toBeGreaterThan(0);
 
-        minerChangeAddress = data[5].trim();
-        expect(minerChangeAddress).toBeDefined();
+        MinnerChangeAddress = data[5].trim();
+        expect(MinnerChangeAddress).toBeDefined();
 
-        minerChangeAmount = parseFloat(data[6].trim());
-        expect(minerChangeAmount).toBeDefined();
-        expect(minerChangeAmount).toBeGreaterThan(0);
+        MinnerChangeAmount = parseFloat(data[6].trim());
+        expect(MinnerChangeAmount).toBeDefined();
+        expect(MinnerChangeAmount).toBeGreaterThan(0);
 
         fee = parseFloat(data[7].trim());
         expect(fee).toBeDefined();
@@ -58,9 +58,9 @@ describe('Evaluate submission', () => {
     });
 
     it('should get transaction details from node', async () => {
-        const RPC_USER = "alice";
-        const RPC_PASSWORD = "password";
-        const RPC_HOST = "http://127.0.0.1:18443/wallet/Miner";
+        const RPC_USER = "mubarak23";
+        const RPC_PASSWORD = "mubarak23";
+        const RPC_HOST = "http://127.0.0.1:18443/wallet/Minner";
 
         const response = await fetch(RPC_HOST, {
             method: 'post',
@@ -98,16 +98,16 @@ describe('Evaluate submission', () => {
         expect(tx.decoded.vout.length).toBe(2);
     });
 
-    it('should have the correct miner output', () => {
-        const minerOutput = tx.decoded.vout.find((o: any) => o.scriptPubKey.address.includes(minerChangeAddress));
-        expect(minerOutput).toBeDefined();
-        expect(minerOutput.value).toBe(minerChangeAmount);
+    it('should have the correct Minner output', () => {
+        const MinnerOutput = tx.decoded.vout.find((o: any) => o.scriptPubKey.address.includes(MinnerChangeAddress));
+        expect(MinnerOutput).toBeDefined();
+        expect(MinnerOutput.value).toBe(MinnerChangeAmount);
     });
 
-    it('should have the correct trader output', () => {
-        const traderOutput = tx.decoded.vout.find((o: any) => o.scriptPubKey.address.includes(traderInputAddress));
-        expect(traderOutput).toBeDefined();
-        expect(traderOutput.value).toBe(traderInputAmount);
+    it('should have the correct Tradersss output', () => {
+        const TradersssOutput = tx.decoded.vout.find((o: any) => o.scriptPubKey.address.includes(TradersssInputAddress));
+        expect(TradersssOutput).toBeDefined();
+        expect(TradersssOutput.value).toBe(TradersssInputAmount);
     });
 
     it('should have the correct fee', () => {
