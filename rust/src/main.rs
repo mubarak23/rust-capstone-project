@@ -71,10 +71,16 @@ fn main() -> bitcoincore_rpc::Result<()> {
     Minner_rpc.generate_to_address(101, &Minner_input_address)?;
 
     // Minner needs at least 20 BTC
-    let mut Minner_balance = Minner_rpc.get_wallet_info().expect("Minner balance").balance;
+    let mut Minner_balance = Minner_rpc
+        .get_wallet_info()
+        .expect("Minner balance")
+        .balance;
     while Minner_balance.to_btc() < 20.0 {
         let _block_hash = Minner_rpc.generate_to_address(1, &Minner_input_address)?;
-        Minner_balance = Minner_rpc.get_wallet_info().expect("Minner balance").balance;
+        Minner_balance = Minner_rpc
+            .get_wallet_info()
+            .expect("Minner balance")
+            .balance;
     }
 
     // Load Traders wallet and generate a new address
